@@ -152,16 +152,25 @@ app.MapPost("/registro", async(AppDbContext db, Usuario nuevoUsuario) =>
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
-    try
+    try 
     {
-        var context = services.GetRequiredService<AppDbContext>();
-        // Esto crea las tablas si no existen (¡Magia!) 🪄
-        context.Database.EnsureCreated();
-        Console.WriteLine("--> Base de datos y tablas verificadas/creadas exitosamente.");
+        var databaseUri = new Uri(renderUrl);
+        var userInfo = databaseUri.UserInfo.Split(':');
+        
+        // --- CORRECCIÓN AQUÍ ---
+        // Si el puerto es -1 (no especificado), forzamos el 5432.
+        int puerto = databaseUri.Port > 0 ? databaseUri.Port : 5432;
+
+        connectionString = $"Host={databaseUri.Host};Port={puerto};Database={databaseUri.LocalPath.TrimStart('/')};Username={userInfo[0]};Password={userInfo[1]};SSL Mode=Require;Trust Server Certificate=true";
+
+        builder.Services.AddDbContext<AppDbContext>(options =>
+            options.UseNpgsql(connectionString));
+            
+        Console.WriteLine($"--> Usando PostgreSQL en Nube. Host: {databaseUri.Host}, Puerto: {puerto}");
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"--> Error creando la base de datos: {ex.Message}");
+        Console.WriteLine($"Error configurando Postgres: {ex.Message}");
     }
 }
 // --- FIN ---
