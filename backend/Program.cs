@@ -8,9 +8,32 @@ var builder = WebApplication.CreateBuilder(args);
 
 //Conexión 
 var connectionString = builder.Configuration.GetConnectionString("CadenaSQL");
+var renderUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
 
-builder.Services.AddDbContext<AppDbContext>(options =>
-options.UseSqlServer(connectionString));
+if (!string.IsNullOrEmpty(renderUrl))
+{
+    try 
+    {
+        var databaseUri = new Uri(renderUrl);
+        var userInfo = databaseUri.UserInfo.Split(':');
+        
+        connectionString = $"Host={databaseUri.Host};Port={databaseUri.Port};Database={databaseUri.LocalPath.TrimStart('/')};Username={userInfo[0]};Password={userInfo[1]};SSL Mode=Require;Trust Server Certificate=true";
+
+        builder.Services.AddDbContext<AppDbContext>(options =>
+            options.UseNpgsql(connectionString));
+            
+        Console.WriteLine("--> Usando Base de Datos PostgreSQL (Nube)");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error configurando Postgres: {ex.Message}");
+    }
+}
+else
+{
+    builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlServer(connectionString));
+}
 
 
 //cors
