@@ -149,6 +149,25 @@ app.MapPost("/registro", async(AppDbContext db, Usuario nuevoUsuario) =>
     return Results.Ok("Usuario creado");
 });
 
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    try
+    {
+        var context = services.GetRequiredService<AppDbContext>();
+        // Esto crea las tablas si no existen (¡Magia!) 🪄
+        context.Database.EnsureCreated();
+        Console.WriteLine("--> Base de datos y tablas verificadas/creadas exitosamente.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"--> Error creando la base de datos: {ex.Message}");
+    }
+}
+// --- FIN ---
+
+app.Run(); // Esta línea ya la tenías
+
 app.Run();
 
 // --- TUS MODELOS (Clases) ---
