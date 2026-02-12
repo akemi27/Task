@@ -21,4 +21,4 @@ ENV ASPNETCORE_URLS=http://+:10000
 
 # 6. ¡Arrancamos! 
 # OJO: Si tu archivo de proyecto NO se llama "Task.csproj", cambia "Task.dll" por "TuNombre.dll"
-ENTRYPOINT ["dotnet", "Task.dll"]
+ENTRYPOINT ["dotnet", "MiPrimeraApi.dll"]
