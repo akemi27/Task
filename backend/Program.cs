@@ -6,23 +6,29 @@ using Microsoft.Identity.Client;
 
 var builder = WebApplication.CreateBuilder(args);
 
-//Conexión 
+// -------------------------------------------------------------------------
+// 1. CONFIGURACIÓN DE BASE DE DATOS (ANTES DE HACER BUILD)
+// -------------------------------------------------------------------------
 var connectionString = builder.Configuration.GetConnectionString("CadenaSQL");
 var renderUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
 
 if (!string.IsNullOrEmpty(renderUrl))
 {
+    // --- ESTAMOS EN RENDER (NUBE) ---
     try 
     {
         var databaseUri = new Uri(renderUrl);
         var userInfo = databaseUri.UserInfo.Split(':');
         
-        connectionString = $"Host={databaseUri.Host};Port={databaseUri.Port};Database={databaseUri.LocalPath.TrimStart('/')};Username={userInfo[0]};Password={userInfo[1]};SSL Mode=Require;Trust Server Certificate=true";
+        // CORRECCIÓN DEL PUERTO: Si no viene puerto (-1), usamos el 5432
+        int puerto = databaseUri.Port > 0 ? databaseUri.Port : 5432;
+
+        string connectionStrRender = $"Host={databaseUri.Host};Port={puerto};Database={databaseUri.LocalPath.TrimStart('/')};Username={userInfo[0]};Password={userInfo[1]};SSL Mode=Require;Trust Server Certificate=true";
 
         builder.Services.AddDbContext<AppDbContext>(options =>
-            options.UseNpgsql(connectionString));
+            options.UseNpgsql(connectionStrRender));
             
-        Console.WriteLine("--> Usando Base de Datos PostgreSQL (Nube)");
+        Console.WriteLine($"--> Usando PostgreSQL en Nube. Host: {databaseUri.Host}, Puerto: {puerto}");
     }
     catch (Exception ex)
     {
@@ -31,12 +37,16 @@ if (!string.IsNullOrEmpty(renderUrl))
 }
 else
 {
+    // --- ESTAMOS EN LOCAL (TU PC) ---
     builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(connectionString));
+        options.UseSqlServer(connectionString));
+    Console.WriteLine("--> Usando SQL Server Local");
 }
 
+// -------------------------------------------------------------------------
+// 2. OTRAS CONFIGURACIONES (CORS, SWAGGER)
+// -------------------------------------------------------------------------
 
-//cors
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("NuevaPolitica", app =>
@@ -47,48 +57,60 @@ builder.Services.AddCors(options =>
     });
 });
 
-// 1. CONFIGURACIÓN DEL VISUALIZADOR (SWAGGER)
-// Esto prepara la documentación
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// -------------------------------------------------------------------------
+// 3. CONSTRUIR LA APP (EL HORNO) 🍳
+// A partir de aquí ya no se puede usar "builder.Services"
+// -------------------------------------------------------------------------
 var app = builder.Build();
 
-// 2. ACTIVAR EL VISUALIZADOR
-// Esto hace que la página azul sea accesible
+// -------------------------------------------------------------------------
+// 4. CREACIÓN AUTOMÁTICA DE TABLAS
+// Esto se ejecuta justo al arrancar
+// -------------------------------------------------------------------------
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    try
+    {
+        var context = services.GetRequiredService<AppDbContext>();
+        context.Database.EnsureCreated(); // <--- ESTO CREA LAS TABLAS SI NO EXISTEN
+        Console.WriteLine("--> Base de datos verificada/creada correctamente.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"--> Error creando tablas: {ex.Message}");
+    }
+}
+
+// -------------------------------------------------------------------------
+// 5. MIDDLEWARES Y ENDPOINTS
+// -------------------------------------------------------------------------
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
-//Activar nueva politica
 app.UseCors("NuevaPolitica");
 
-// (Opcional) Redirección HTTPS desactivada para evitar problemas locales
-// app.UseHttpsRedirection(); 
+// --- ENDPOINTS ---
 
-// --- TUS ENDPOINTS (Tus "ventanillas" de atención) ---
-
-// --- ENDPOINTS CONECTADOS A BASE DE DATOS ---
-
-// 1. GET: Obtener tareas desde SQL
-// Inyectamos "AppDbContext db" para poder usar la base de datos
 app.MapGet("/tareas", async (AppDbContext db, int usuarioId) => {
     return await db.Tareas
     .Where(t => t.UsuarioId == usuarioId)
     .ToListAsync();
 });
 
-// 2. POST: Guardar en SQL
 app.MapPost("/tareas", async (AppDbContext db, Tarea nuevaTarea) => {
-    // Ya no calculamos ID, SQL Server lo hace solo
     await db.Tareas.AddAsync(nuevaTarea);
-    await db.SaveChangesAsync(); // ¡IMPORTANTE! Esto confirma el guardado
+    await db.SaveChangesAsync();
     return Results.Ok(nuevaTarea);
 });
 
-// 3. PUT: Actualizar en SQL
 app.MapPut("/tareas/{id}", async (int id, int usuarioId, AppDbContext db, Tarea tareaActualizada) => {
     var tarea = await db.Tareas
         .FirstOrDefaultAsync(t => t.Id == id && t.UsuarioId == usuarioId);
@@ -98,11 +120,10 @@ app.MapPut("/tareas/{id}", async (int id, int usuarioId, AppDbContext db, Tarea 
     tarea.Nombre = tareaActualizada.Nombre;
     tarea.Completada = tareaActualizada.Completada;
 
-    await db.SaveChangesAsync(); // Guardamos cambios
+    await db.SaveChangesAsync();
     return Results.Ok(tarea);
 });
 
-// 4. DELETE: Borrar de SQL
 app.MapDelete("/tareas/{id}", async (int id, int usuarioId, AppDbContext db) => {
     var tarea = await db.Tareas
     .FirstOrDefaultAsync(t => t.Id == id && t.UsuarioId == usuarioId);
@@ -110,7 +131,7 @@ app.MapDelete("/tareas/{id}", async (int id, int usuarioId, AppDbContext db) => 
     if (tarea == null) return Results.NotFound();
 
     db.Tareas.Remove(tarea);
-    await db.SaveChangesAsync(); // Confirmamos borrado
+    await db.SaveChangesAsync();
     return Results.Ok("Eliminado");
 });
 
@@ -149,37 +170,9 @@ app.MapPost("/registro", async(AppDbContext db, Usuario nuevoUsuario) =>
     return Results.Ok("Usuario creado");
 });
 
-using (var scope = app.Services.CreateScope())
-{
-    var services = scope.ServiceProvider;
-    try 
-    {
-        var databaseUri = new Uri(renderUrl);
-        var userInfo = databaseUri.UserInfo.Split(':');
-        
-        // --- CORRECCIÓN AQUÍ ---
-        // Si el puerto es -1 (no especificado), forzamos el 5432.
-        int puerto = databaseUri.Port > 0 ? databaseUri.Port : 5432;
+app.Run(); // ¡SOLO UNO AL FINAL!
 
-        connectionString = $"Host={databaseUri.Host};Port={puerto};Database={databaseUri.LocalPath.TrimStart('/')};Username={userInfo[0]};Password={userInfo[1]};SSL Mode=Require;Trust Server Certificate=true";
-
-        builder.Services.AddDbContext<AppDbContext>(options =>
-            options.UseNpgsql(connectionString));
-            
-        Console.WriteLine($"--> Usando PostgreSQL en Nube. Host: {databaseUri.Host}, Puerto: {puerto}");
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"Error configurando Postgres: {ex.Message}");
-    }
-}
-// --- FIN ---
-
-app.Run(); // Esta línea ya la tenías
-
-app.Run();
-
-// --- TUS MODELOS (Clases) ---
+// --- MODELOS ---
 
 public class Tarea
 {
@@ -196,8 +189,6 @@ public class Usuario
     public string NombreUsuario {get;set;}
     public string Password {get;set;}
 }
-
-//Puente con la BD
 
 public class AppDbContext : DbContext
 {
