@@ -22,7 +22,7 @@ function App() {
   const [nuevoTexto, setNuevoTexto] = useState("");
   const [nuevaFecha, setNuevaFecha] = useState("");
   const [filtro, setFiltro] = useState('todas');
-  const API_URL = "http://localhost:5102/tareas";
+  const API_URL = "https://task-8wyw.onrender.com/tareas";
 
   // --- LÓGICA DE TAREAS (Igual que antes) ---
   const cargarTareas = useCallback(() => {
