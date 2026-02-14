@@ -107,6 +107,10 @@ app.MapGet("/tareas", async (AppDbContext db, int usuarioId) => {
 });
 
 app.MapPost("/tareas", async (AppDbContext db, Tarea nuevaTarea) => {
+    if (nuevaTarea.FechaVencimiento.HasValue)
+    {
+        nuevaTarea.FechaVencimiento = DateTime.SpecifyKind(nuevaTarea.FechaVencimiento.Value, DateTimeKind.Utc);
+    }
     await db.Tareas.AddAsync(nuevaTarea);
     await db.SaveChangesAsync();
     return Results.Ok(nuevaTarea);
@@ -120,6 +124,15 @@ app.MapPut("/tareas/{id}", async (int id, int usuarioId, AppDbContext db, Tarea 
 
     tarea.Nombre = tareaActualizada.Nombre;
     tarea.Completada = tareaActualizada.Completada;
+
+    if (tareaActualizada.FechaVencimiento.HasValue)
+    {
+        tarea.FechaVencimiento = DateTime.SpecifyKind(tareaActualizada.FechaVencimiento.Value, DateTimeKind.Utc);
+    } 
+    else 
+    {
+        tarea.FechaVencimiento = null;
+    }
 
     await db.SaveChangesAsync();
     return Results.Ok(tarea);
